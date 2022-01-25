@@ -1,0 +1,53 @@
+{
+    "panels": {
+        "disable-struts": "false",
+        "plugin-ids": "[<7>, <8>, <9>, <10>, <5>, <4>, <11>, <12>, <3>, <2>, <6>, <1>]",
+        "mode": "uint32 0",
+        "icon-size": "uint32 16",
+        "size": "uint32 24",
+        "autohide-behavior": "uint32 0",
+        "background-rgba": "[<0.0>, <0.0>, <0.0>, <1.0>]",
+        "nrows": "uint32 1",
+        "position-locked": "true",
+        "position": "'p=6;x=1280;y=11'",
+        "span-monitors": "false",
+        "length-adjust": "true",
+        "background-style": "uint32 1",
+        "output-name": "'Automatic'",
+        "background-image": "'/home/malte/Documents/backups/smartphone_2022-01-12/DCIM/Camera/IMG_20211122_082918.jpg'",
+        "length": "uint32 100"
+    },
+    "plugins": {
+        "1": "'whiskermenu'",
+        "2/mode": "uint32 2",
+        "3/style": "uint32 0",
+        "4/known-items": "[<'Microsoft Teams - Preview1'>]",
+        "5/style": "uint32 0",
+        "6/style": "uint32 0",
+        "9/expand": "true",
+        "5": "'separator'",
+        "11": "'pulseaudio'",
+        "9/style": "uint32 0",
+        "4/known-legacy-items": "[<'blueman'>, <'networkmanager applet'>]",
+        "12": "'power-manager-plugin'",
+        "10": "'cpugraph'",
+        "4": "'systray'",
+        "2/digital-format": "'%a %_d %b, %R'",
+        "11/mpris-players": "'firefox.instance18991;firefox.instance39606;firefox.instance43458;firefox.instance45672;firefox.instance75935;firefox.instance94011;spotify'",
+        "2": "'clock'",
+        "3": "'separator'",
+        "6": "'separator'",
+        "7/expand": "false",
+        "7": "'separator'",
+        "2/tooltip-format": "'%A %d %B %Y'",
+        "7/style": "uint32 0",
+        "11/enable-keyboard-shortcuts": "true",
+        "9": "'separator'",
+        "8": "'i3-workspaces'"
+    },
+    "misc": {
+        "/configver": "2",
+        "/panels": "[<1>]",
+        "/panels/dark-mode": "true"
+    }
+}

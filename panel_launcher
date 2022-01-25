@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+
+# import subprocess
+# import time
+# 
+# while True:
+#     time.sleep(5)
+#     try:
+#         subprocess.Popen(["xrandr"])
+#     except:
+#         pass
+#     else:
+#         break
+# 
+# def get(cmd): return subprocess.check_output(cmd).decode("utf-8")
+# def count_screens(xr): return xr.count(" connected ")
+# def run_command(cmd): subprocess.Popen(["/bin/bash", "-c", cmd])
+# 
+# xr1 = None
+# while True:
+#     xr2 = count_screens(get(["xrandr"]))
+# 
+#     if xr2 != xr1:
+#         print(get(["xrandr"]))
+# 
+#         xr1 = xr2
+
+import Xlib
+from Xlib import display
+from Xlib.ext import randr
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, GLib, Gio
+import json
+import glob
+import os
+import time
+
+HOME = GLib.get_home_dir()
+BASE_DIR = HOME + "/.config/auto-panel-conf"
+JSON_FILE_NAME = BASE_DIR + "/panel.json"
+CONFIG_PATH = BASE_DIR + "/configs"
+
+os.makedirs(BASE_DIR, exist_ok=True)
+
+def save_current_state(xfconf):
+    current_properties = {
+        "panels": {},
+        "plugins": {},
+        "misc": {}
+    }
+
+    plugin_id_map = {}
+    next_plugin_id = 1
+    
+    result = xfconf.call_sync('GetAllProperties',
+                GLib.Variant('(ss)', ('xfce4-panel', '')), 0, -1, None)
+
+    props = result.get_child_value(0)
+    for n in range(props.n_children()):
+        p = props.get_child_value(n)
+        key = p.get_child_value(0).get_string()
+        value = str(p.get_child_value(1).get_variant())
+        if key.startswith("/panels/panel"):
+            parts = key.split("/")
+            key = "/".join(parts[3:])
+            if parts[3] == "plugin-ids":
+                new_value = ""
+                for plugin_id in value[1:-1].split(", "):
+                    if plugin_id[1:-1] in plugin_id_map:
+                        new_value += ", <" + plugin_id_map[plugin_id[1:-1]] + ">"
+                    else:
+                        plugin_id_map[plugin_id[1:-1]] = str(next_plugin_id)
+                        new_value += ", <" + str(next_plugin_id) + ">"
+                        next_plugin_id += 1
+                value = "[" + new_value[2:] + "]"
+            current_properties["panels"][key] = value
+        elif key.startswith("/plugins/"):
+            parts = key.split("/")
+            plugin_id = parts[2].split("-")[1]
+            if plugin_id in plugin_id_map:
+                plugin_id = plugin_id_map[plugin_id]
+            else:
+                plugin_id_map[plugin_id] = str(next_plugin_id)
+                plugin_id = str(next_plugin_id)
+                next_plugin_id += 1
+            
+            key = plugin_id + ("/" + ("/".join(parts[3:])) if len(parts) > 3 else "")
+            current_properties["plugins"][key] = value
+        else:
+            current_properties["misc"][key] = value
+
+    jsonFile = open(JSON_FILE_NAME, "w")
+    jsonFile.write(json.dumps(current_properties, indent=4))
+    jsonFile.close()
+
+    for i in plugin_id_map:
+        for name in glob.glob(GLib.get_home_dir() + '/.config/xfce4/panel/' + f'*-{i}.rc'):
+            f = open(name, 'rb')
+            bytes = f.read()
+            f.close()
+
+            os.makedirs(CONFIG_PATH, exist_ok=True)
+            f = open(CONFIG_PATH + "/" + name.split("/")[-1].replace(f'-{i}.rc', f'-{plugin_id_map[i]}.rc'), 'wb')
+            f.write(bytes)
+            f.close()
+
+
+def load_state(xfconf, outputs):
+    jsonFile = open(JSON_FILE_NAME, "r")
+    properties = json.load(jsonFile)
+    jsonFile.close()
+
+    session_bus = Gio.BusType.SESSION
+    conn = Gio.bus_get_sync(session_bus, None)
+
+    destination = 'org.xfce.Panel'
+    path = '/org/xfce/Panel'
+    interface = destination
+
+    dbus_proxy = Gio.DBusProxy.new_sync(conn, 0, None, destination, path, interface, None)
+
+    if dbus_proxy is not None:
+        # reset all properties to make sure old settings are invalidated
+        try:
+            xfconf.call_sync('ResetProperty', GLib.Variant(
+                '(ssb)', ('xfce4-panel', '/', True)), 0, -1, None)
+        except GLib.Error:
+            pass
+
+        # set properties
+        for (key, value) in sorted(properties["misc"].items()):
+            xfconf.call_sync('SetProperty', GLib.Variant(
+                '(ssv)', ('xfce4-panel', key, GLib.Variant.parse(None, value, None, None))), 0, -1, None)
+
+        panels = ""
+        next_plugin_id = 1
+        for panel, output in enumerate(outputs):
+            panels += ", <" + str(panel) + ">"
+
+            plugin_id_map = {}
+            for (key, value) in sorted(properties["plugins"].items()):
+                plugin_id = key.split("/")[0] if "/" in key else key
+                if plugin_id in plugin_id_map:
+                    plugin_id = plugin_id_map[plugin_id]
+                else:
+                    plugin_id_map[plugin_id] = str(next_plugin_id)
+                    plugin_id = str(next_plugin_id)
+                    next_plugin_id += 1
+                key = "/plugins/plugin-" + plugin_id + ("/" + key.split("/")[1] if "/" in key else "")
+               
+                xfconf.call_sync('SetProperty', GLib.Variant(
+                    '(ssv)', ('xfce4-panel', key, GLib.Variant.parse(None, value, None, None))), 0, -1, None)
+        
+            for (key, value) in sorted(properties["panels"].items()):
+                if key == "output-name":
+                    value = "'" + output + "'"
+                elif key == "plugin-ids":
+                    new_value = ""
+                    for plugin_id in value[1:-1].split(", "):
+                        if plugin_id[1:-1] in plugin_id_map:
+                            new_value += ", <" + plugin_id_map[plugin_id[1:-1]] + ">"
+                        else:
+                            plugin_id_map[plugin_id[1:-1]] = str(next_plugin_id)
+                            new_value += ", <" + str(next_plugin_id) + ">"
+                            next_plugin_id += 1
+                    value = "[" + new_value[2:] + "]"
+
+                key = f"/panels/panel-{panel}/" + key
+                xfconf.call_sync('SetProperty', GLib.Variant(
+                    '(ssv)', ('xfce4-panel', key, GLib.Variant.parse(None, value, None, None))), 0, -1, None)
+
+
+            for i in plugin_id_map:
+                for name in glob.glob(CONFIG_PATH + f'/*-{i}.rc'):
+                    f = open(name, 'r')
+                    content = f.read()
+                    f.close()
+                    
+                    if "i3-workspaces" in name:
+                        content = content.replace("output=", f"output={output}")
+                        content = content.replace("auto_detect_outputs=false", "auto_detect_outputs=true")
+
+                    os.makedirs(GLib.get_home_dir() + '/.config/xfce4/panel/', exist_ok=True)
+                    f = open(GLib.get_home_dir() + '/.config/xfce4/panel/' + name.split("/")[-1].replace(f'-{i}.rc', f'-{plugin_id_map[i]}.rc'), 'w')
+                    f.write(content)
+                    f.close()
+
+                    print("copied:", name, GLib.get_home_dir() + '/.config/xfce4/panel/' + name.split("/")[-1].replace(f'-{i}.rc', f'-{plugin_id_map[i]}.rc'))
+
+        xfconf.call_sync('SetProperty', GLib.Variant(
+                '(ssv)', ('xfce4-panel', "/panels", GLib.Variant.parse(None, "[" + panels[2:] + "]", None, None))), 0, -1, None)
+
+
+        # restart panel
+        try:
+            dbus_proxy.call_sync('Terminate', GLib.Variant('(b)', ('xfce4-panel',)), 0, -1, None)
+        except GLib.GError: 
+            pass
+
+
+if __name__ == "__main__":
+    d = display.Display()
+    s = d.screen()
+    window = s.root.create_window(0, 0, 1, 1, 1, s.root_depth)
+
+    # build object to communicate with xfce
+    session_bus = Gio.BusType.SESSION
+    cancellable = None
+    connection = Gio.bus_get_sync(session_bus, cancellable)
+    proxy_property = 0
+    interface_properties_array = None
+    destination = 'org.xfce.Xfconf'
+    path = '/org/xfce/Xfconf'
+    interface = destination
+
+    xfconf = Gio.DBusProxy.new_sync(
+            connection,
+            proxy_property,
+            interface_properties_array,
+            destination,
+            path,
+            interface,
+            cancellable)
+
+    # wait for new inputs
+    prev_outputs = []
+    while True:
+        outputs = []
+
+        res = randr.get_screen_resources(window)
+        for output in res.outputs:
+            info = randr.get_output_info(window, output, res.timestamp)
+            if info.crtc != 0:
+                outputs.append(info.name)
+
+        if outputs != prev_outputs:
+            prev_outputs = outputs
+
+            # save_current_state(xfconf)
+            # load_state(xfconf, ["DP2-2", "DP1"])
+            # load_state(xfconf, ["eDP1"])
+            load_state(xfconf, outputs)
+        
+        time.sleep(5)

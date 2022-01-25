@@ -35,6 +35,7 @@ import json
 import glob
 import os
 import time
+import argparse
 
 HOME = GLib.get_home_dir()
 BASE_DIR = HOME + "/.config/auto-panel-conf"
@@ -200,32 +201,47 @@ def load_state(xfconf, outputs):
 
 
 if __name__ == "__main__":
-    d = display.Display()
-    s = d.screen()
-    window = s.root.create_window(0, 0, 1, 1, 1, s.root_depth)
+    parser = argparse.ArgumentParser(description='Add some integers.')
+    
+    parser.add_argument('--daemon', action='store_true',
+                    help='waits for screens to connect and automatically add panels')
+    
+    parser.add_argument('--load', action='store_true',
+                    help='adds panels for the current configuration (default behaviour)')
 
-    # build object to communicate with xfce
-    session_bus = Gio.BusType.SESSION
-    cancellable = None
-    connection = Gio.bus_get_sync(session_bus, cancellable)
-    proxy_property = 0
-    interface_properties_array = None
-    destination = 'org.xfce.Xfconf'
-    path = '/org/xfce/Xfconf'
-    interface = destination
+    parser.add_argument('--save', action='store_true',
+                    help='saves the current panel config')
+    
+    args = parser.parse_args()
 
-    xfconf = Gio.DBusProxy.new_sync(
-            connection,
-            proxy_property,
-            interface_properties_array,
-            destination,
-            path,
-            interface,
-            cancellable)
+    if args.load or (not args.daemon and not args.save):
+        print("adding panels ...")
 
-    # wait for new inputs
-    prev_outputs = []
-    while True:
+        # create object to detect screens
+        d = display.Display()
+        s = d.screen()
+        window = s.root.create_window(0, 0, 1, 1, 1, s.root_depth)
+
+        # build object to communicate with xfce
+        session_bus = Gio.BusType.SESSION
+        cancellable = None
+        connection = Gio.bus_get_sync(session_bus, cancellable)
+        proxy_property = 0
+        interface_properties_array = None
+        destination = 'org.xfce.Xfconf'
+        path = '/org/xfce/Xfconf'
+        interface = destination
+
+        xfconf = Gio.DBusProxy.new_sync(
+                connection,
+                proxy_property,
+                interface_properties_array,
+                destination,
+                path,
+                interface,
+                cancellable)
+
+        # wait for new inputs
         outputs = []
 
         res = randr.get_screen_resources(window)
@@ -234,12 +250,74 @@ if __name__ == "__main__":
             if info.crtc != 0:
                 outputs.append(info.name)
 
-        if outputs != prev_outputs:
-            prev_outputs = outputs
+        print("outputs:", outputs)
 
-            # save_current_state(xfconf)
-            # load_state(xfconf, ["DP2-2", "DP1"])
-            # load_state(xfconf, ["eDP1"])
-            load_state(xfconf, outputs)
-        
-        time.sleep(5)
+        load_state(xfconf, outputs)
+
+    if args.save:
+        print("saving current panel ...")
+
+        # build object to communicate with xfce
+        session_bus = Gio.BusType.SESSION
+        cancellable = None
+        connection = Gio.bus_get_sync(session_bus, cancellable)
+        proxy_property = 0
+        interface_properties_array = None
+        destination = 'org.xfce.Xfconf'
+        path = '/org/xfce/Xfconf'
+        interface = destination
+
+        xfconf = Gio.DBusProxy.new_sync(
+                connection,
+                proxy_property,
+                interface_properties_array,
+                destination,
+                path,
+                interface,
+                cancellable)
+
+        save_current_state(xfconf)
+
+    if args.daemon:
+        print("starting daemon ...")
+        # create object to detect screens
+        d = display.Display()
+        s = d.screen()
+        window = s.root.create_window(0, 0, 1, 1, 1, s.root_depth)
+
+        # build object to communicate with xfce
+        session_bus = Gio.BusType.SESSION
+        cancellable = None
+        connection = Gio.bus_get_sync(session_bus, cancellable)
+        proxy_property = 0
+        interface_properties_array = None
+        destination = 'org.xfce.Xfconf'
+        path = '/org/xfce/Xfconf'
+        interface = destination
+
+        xfconf = Gio.DBusProxy.new_sync(
+                connection,
+                proxy_property,
+                interface_properties_array,
+                destination,
+                path,
+                interface,
+                cancellable)
+
+        # wait for new inputs
+        prev_outputs = []
+        while True:
+            outputs = []
+
+            res = randr.get_screen_resources(window)
+            for output in res.outputs:
+                info = randr.get_output_info(window, output, res.timestamp)
+                if info.crtc != 0:
+                    outputs.append(info.name)
+
+            if outputs != prev_outputs:
+                prev_outputs = outputs
+
+                load_state(xfconf, outputs)
+            
+            time.sleep(5)
